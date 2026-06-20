@@ -1,0 +1,146 @@
+[
+  {
+    "id": "whatsapp-webhook",
+    "type": "http in",
+    "z": "flow1",
+    "name": "WhatsApp Events",
+    "url": "/whatsapp-events",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 200,
+    "y": 100,
+    "wires": [["event-router"]]
+  },
+  {
+    "id": "event-router",
+    "type": "switch",
+    "z": "flow1",
+    "name": "Route by Event",
+    "property": "payload.event",
+    "propertyType": "msg",
+    "rules": [
+      {"t": "eq", "v": "SESSION_DISCONNECTED"},
+      {"t": "eq", "v": "SESSION_CONNECTED"},
+      {"t": "eq", "v": "QR_GENERATED"},
+      {"t": "eq", "v": "MESSAGE_RECEIVED"}
+    ],
+    "checkall": "true",
+    "repair": false,
+    "outputs": 4,
+    "x": 400,
+    "y": 100,
+    "wires": [
+      ["telegram-disconnected"],
+      ["log-connected"],
+      ["log-qr"],
+      ["email-message"]
+    ]
+  },
+  {
+    "id": "telegram-disconnected",
+    "type": "function",
+    "z": "flow1",
+    "name": "Format Telegram Alert",
+    "func": `
+      const payload = msg.payload;
+      msg.payload = {
+        chat_id: env.get("TELEGRAM_CHAT_ID"),
+        text: "⚠️ ALERTA: Sesión WhatsApp Desconectada\\n\\n" +
+              "Sesión: " + payload.sessionName + "\\n" +
+              "Evento: " + payload.event + "\\n" +
+              "Hora: " + payload.timestamp + "\\n" +
+              "Detalles: " + JSON.stringify(payload.details)
+      };
+      return msg;
+    `,
+    "wires": [["telegram-send"]]
+  },
+  {
+    "id": "telegram-send",
+    "type": "http request",
+    "z": "flow1",
+    "name": "Send Telegram",
+    "method": "POST",
+    "ret": "txt",
+    "url": "https://api.telegram.org/bot{{env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+    "tls": "",
+    "x": 600,
+    "y": 100,
+    "wires": [["output"]]
+  },
+  {
+    "id": "log-connected",
+    "type": "debug",
+    "z": "flow1",
+    "name": "Log Connected",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "x": 600,
+    "y": 200,
+    "wires": []
+  },
+  {
+    "id": "log-qr",
+    "type": "debug",
+    "z": "flow1",
+    "name": "Log QR Generated",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "x": 600,
+    "y": 300,
+    "wires": []
+  },
+  {
+    "id": "email-message",
+    "type": "function",
+    "z": "flow1",
+    "name": "Format Email",
+    "func": `
+      const payload = msg.payload;
+      msg.payload = {
+        to: "soporte@empresa.com",
+        subject: "Nuevo mensaje en " + payload.sessionName,
+        html: "<h2>Nuevo mensaje recibido</h2>" +
+              "<p><strong>Sesión:</strong> " + payload.sessionName + "</p>" +
+              "<p><strong>Hora:</strong> " + payload.timestamp + "</p>" +
+              "<pre>" + JSON.stringify(payload.details, null, 2) + "</pre>"
+      };
+      return msg;
+    `,
+    "wires": [["send-email"]]
+  },
+  {
+    "id": "send-email",
+    "type": "email",
+    "z": "flow1",
+    "server": "smtp.gmail.com",
+    "port": "587",
+    "secure": false,
+    "tls": true,
+    "name": "Send Email",
+    "dname": "WhatsApp Manager",
+    "x": 600,
+    "y": 400,
+    "wires": [["output"]]
+  },
+  {
+    "id": "output",
+    "type": "http response",
+    "z": "flow1",
+    "name": "Response",
+    "statusCode": "200",
+    "headers": {},
+    "x": 800,
+    "y": 100,
+    "wires": []
+  }
+]

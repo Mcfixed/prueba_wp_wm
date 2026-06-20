@@ -1,0 +1,85 @@
+# ──────────────────────────────────────────────
+# WhatsApp Manager - Docker Compose
+# ──────────────────────────────────────────────
+
+version: '3.9'
+
+services:
+  # ── PostgreSQL ──
+  postgres:
+    image: postgres:16-alpine
+    container_name: wm-postgres
+    restart: unless-stopped
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-whatsapp_manager}
+      POSTGRES_USER: ${POSTGRES_USER:-wm_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wm_secure_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-wm_user} -d ${POSTGRES_DB:-whatsapp_manager}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Backend API ──
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: wm-api
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      NODE_ENV: production
+      API_PORT: 3000
+      API_URL: http://api:3000
+      WEB_URL: http://web:80
+      DATABASE_URL: postgresql://${POSTGRES_USER:-wm_user}:${POSTGRES_PASSWORD:-wm_secure_password}@postgres:5432/${POSTGRES_DB:-whatsapp_manager}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      BAILEYS_SESSION_DIR: /app/data/sessions
+      BAILEYS_MAX_RECONNECT_RETRIES: ${BAILEYS_MAX_RECONNECT_RETRIES:-5}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      CORS_ORIGIN: http://web:80
+    volumes:
+      - session_data:/app/data/sessions
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ── Frontend ──
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+    container_name: wm-web
+    restart: unless-stopped
+    ports:
+      - '80:80'
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  

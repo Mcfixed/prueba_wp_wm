@@ -1,0 +1,27 @@
+{
+  "name": "whatsapp-manager",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Plataforma Multi-Sesión WhatsApp basada en Baileys",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "db:migrate": "npm run -w @whatsapp-manager/api prisma:migrate",
+    "db:seed": "npm run -w @whatsapp-manager/api prisma:seed",
+    "db:studio": "npm run -w @whatsapp-manager/api prisma:studio",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:build": "docker compose build",
+    "clean": "turbo clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "typescript": "^5.5.0"
+  }
+}

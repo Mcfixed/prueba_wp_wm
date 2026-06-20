@@ -1,0 +1,244 @@
+// ──────────────────────────────────────────────
+// WhatsApp Manager - Prisma Schema
+// ──────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────────────────────────
+// Users & Auth
+// ──────────────────────────────────────────────
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String
+  role         Role     @default(OPERATOR)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  sessions     Session[]
+  alertRules   AlertRule[]
+  webhooks     WebhookConfig[]
+  emailConfigs EmailConfig[]
+  auditLogs    AuditLog[]
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+enum Role {
+  ADMIN
+  OPERATOR
+  VIEWER
+
+  @@map("roles")
+}
+
+// ──────────────────────────────────────────────
+// WhatsApp Sessions
+// ──────────────────────────────────────────────
+model Session {
+  id              String          @id @default(uuid())
+  name            String
+  description     String?
+  state           SessionState    @default(CREATED)
+  phoneNumber     String?         @map("phone_number")
+  qrCode          String?         @map("qr_code")
+  userId          String          @map("user_id")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+  lastConnectionAt DateTime?      @map("last_connection_at")
+  lastActivityAt  DateTime?       @map("last_activity_at")
+
+  user          User              @relation(fields: [userId], references: [id])
+  credentials   SessionCredential?
+  events        Event[]
+  alertRules    AlertRule[]
+  logs          Log[]
+  webhookConfigs WebhookConfigSession[]
+
+  @@map("sessions")
+}
+
+enum SessionState {
+  CREATED
+  WAITING_QR
+  CONNECTING
+  CONNECTED
+  DISCONNECTED
+  RECONNECTING
+  LOGGED_OUT
+  ERROR
+
+  @@map("session_states")
+}
+
+model SessionCredential {
+  id        String   @id @default(uuid())
+  sessionId String   @unique @map("session_id")
+  data      Bytes
+  iv        String
+  tag       String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("session_credentials")
+}
+
+// ──────────────────────────────────────────────
+// Events
+// ──────────────────────────────────────────────
+model Event {
+  id        String   @id @default(uuid())
+  sessionId String   @map("session_id")
+  type      String
+  data      Json?
+  timestamp DateTime @default(now())
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, timestamp])
+  @@map("events")
+}
+
+// ──────────────────────────────────────────────
+// Alerts
+// ──────────────────────────────────────────────
+model AlertRule {
+  id        String   @id @default(uuid())
+  sessionId String   @map("session_id")
+  userId    String   @map("user_id")
+  event     String
+  channels  String[]
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@map("alert_rules")
+}
+
+model AlertHistory {
+  id        String   @id @default(uuid())
+  ruleId    String   @map("rule_id")
+  sessionId String   @map("session_id")
+  event     String
+  channels  String[]
+  delivered Boolean  @default(false)
+  error     String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("alert_history")
+}
+
+// ──────────────────────────────────────────────
+// Email Configuration
+// ──────────────────────────────────────────────
+model EmailConfig {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  host       String
+  port       Int
+  secure     Boolean  @default(false)
+  username   String
+  password   String
+  recipients String[]
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  owner User @relation(fields: [userId], references: [id])
+
+  @@map("email_configs")
+}
+
+// ──────────────────────────────────────────────
+// Webhooks
+// ──────────────────────────────────────────────
+model WebhookConfig {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  name      String
+  url       String
+  events    String[]
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user     User                    @relation(fields: [userId], references: [id])
+  sessions WebhookConfigSession[]
+
+  @@map("webhook_configs")
+}
+
+model WebhookConfigSession {
+  webhookId String @map("webhook_id")
+  sessionId String @map("session_id")
+
+  webhook WebhookConfig @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  session Session       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@id([webhookId, sessionId])
+  @@map("webhook_config_sessions")
+}
+
+// ──────────────────────────────────────────────
+// Logs
+// ──────────────────────────────────────────────
+model Log {
+  id        String   @id @default(uuid())
+  sessionId String?  @map("session_id")
+  eventType String   @map("event_type")
+  severity  String   @default("INFO")
+  message   String
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  session Session? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([sessionId, createdAt])
+  @@index([severity])
+  @@map("logs")
+}
+
+// ──────────────────────────────────────────────
+// Audit
+// ──────────────────────────────────────────────
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  action    String
+  entity    String
+  entityId  String?  @map("entity_id")
+  details   Json?
+  ipAddress String?  @map("ip_address")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@map("audit_logs")
+}
