@@ -1,0 +1,121 @@
+[
+    {
+        "id": "9d99a8f0a652a288",
+        "type": "inject",
+        "z": "05aabbe8f4a112db",
+        "name": "Enviar mensaje",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "payload": "🔴 Alerta desde Node-RED",
+        "payloadType": "str",
+        "x": 220,
+        "y": 220,
+        "wires": [
+            [
+                "ad734c1ec83fe688"
+            ]
+        ]
+    },
+    {
+        "id": "ad734c1ec83fe688",
+        "type": "function",
+        "z": "05aabbe8f4a112db",
+        "name": "Guardar texto y login",
+        "func": "flow.set('lastMessageText', msg.payload);\n\nmsg.method = 'POST';\nmsg.url = 'http://localhost:3000/api/v1/auth/login';\nmsg.headers = {\n    'Content-Type': 'application/json'\n};\n\nmsg.payload = {\n    email: 'admin@whatsappmanager.com',\n    password: 'admin123'\n};\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 240,
+        "y": 260,
+        "wires": [
+            [
+                "7758b4eeaf3e7f72"
+            ]
+        ]
+    },
+    {
+        "id": "7758b4eeaf3e7f72",
+        "type": "http request",
+        "z": "05aabbe8f4a112db",
+        "name": "POST /auth/login",
+        "method": "use",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "",
+        "persist": false,
+        "senderr": true,
+        "headers": [],
+        "x": 230,
+        "y": 300,
+        "wires": [
+            [
+                "04d55a1eae4d8e5e"
+            ]
+        ]
+    },
+    {
+        "id": "04d55a1eae4d8e5e",
+        "type": "function",
+        "z": "05aabbe8f4a112db",
+        "name": "Extraer token y enviar",
+        "func": "var SESSION_ID = '7bf9d8a4-cb9f-44df-bb5e-36272e175524';\nvar PHONE = '56982841275';\n\nvar token = msg.payload.accessToken;\nvar originalText = flow.get('lastMessageText') || 'Mensaje desde Node-RED';\n\nif (!token) {\n    node.error('No se pudo obtener token', msg);\n    return null;\n}\n\nmsg.method = 'POST';\nmsg.url = 'http://localhost:3000/api/v1/messages/' + SESSION_ID + '/send';\n\nmsg.headers = {\n    'Authorization': 'Bearer ' + token,\n    'Content-Type': 'application/json'\n};\n\nmsg.payload = {\n    to: PHONE,\n    text: originalText\n};\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 260,
+        "y": 360,
+        "wires": [
+            [
+                "6e6de85f0aee77cb"
+            ]
+        ]
+    },
+    {
+        "id": "6e6de85f0aee77cb",
+        "type": "http request",
+        "z": "05aabbe8f4a112db",
+        "name": "Enviar WhatsApp",
+        "method": "use",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "",
+        "persist": false,
+        "senderr": true,
+        "headers": [],
+        "x": 470,
+        "y": 300,
+        "wires": [
+            [
+                "99f91c54106b2824"
+            ]
+        ]
+    },
+    {
+        "id": "99f91c54106b2824",
+        "type": "debug",
+        "z": "05aabbe8f4a112db",
+        "name": "Resultado",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": true,
+        "complete": "true",
+        "targetType": "full",
+        "x": 480,
+        "y": 360,
+        "wires": []
+    }
+]

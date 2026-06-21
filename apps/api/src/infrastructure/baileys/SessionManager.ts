@@ -311,9 +311,15 @@ export class SessionManager {
   async disconnectSession(sessionId: string): Promise<void> {
     const active = this.sessions.get(sessionId);
     if (active) {
+      active.closing = true; // Prevent reconnect loop
       active.socket.end(new Error('Manual disconnect'));
       this.sessions.delete(sessionId);
     }
+
+    // Fire alert BEFORE cleaning up
+    await this.alertService.evaluateAndNotify(sessionId, 'SESSION_DISCONNECTED', {
+      reason: 'manual_disconnect',
+    });
 
     // Clean session directory
     const sessionDir = path.join(config.baileys.sessionDir, sessionId);

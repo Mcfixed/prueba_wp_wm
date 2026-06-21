@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Play, Square, RefreshCw, Trash2, Eye, QrCode, MessageSquare } from 'lucide-react';
+import { Plus, Play, Square, RefreshCw, Trash2, Eye, QrCode, MessageSquare, Copy, Check } from 'lucide-react';
 import { sessionApi } from '../services/api';
 import { getSocket, connectSocket } from '../services/socket';
 import { StatusBadge } from '../components/ui/StatusBadge';
@@ -61,6 +61,13 @@ export function SessionsPage() {
   });
 
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyToClipboard = async (text: string, id: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
 
   const connectMutation = useMutation({
     mutationFn: (id: string) => sessionApi.connect(id),
@@ -219,6 +226,22 @@ export function SessionsPage() {
                   <td className="p-4">
                     <div>
                       <p className="font-medium">{session.name}</p>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <code className="text-xs text-gray-400 font-mono truncate max-w-[180px] block">
+                          {session.id}
+                        </code>
+                        <button
+                          onClick={() => copyToClipboard(session.id, session.id)}
+                          className="text-gray-400 hover:text-gray-600 transition-colors"
+                          title="Copiar ID"
+                        >
+                          {copiedId === session.id ? (
+                            <Check size={12} className="text-green-500" />
+                          ) : (
+                            <Copy size={12} />
+                          )}
+                        </button>
+                      </div>
                       {session.description && (
                         <p className="text-sm text-gray-500">{session.description}</p>
                       )}
