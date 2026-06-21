@@ -9,6 +9,7 @@ import { WebhooksPage } from './pages/WebhooksPage';
 import { EmailPage } from './pages/EmailPage';
 import { LogsPage } from './pages/LogsPage';
 import { MessagesPage } from './pages/MessagesPage';
+import { ApiKeysPage } from './pages/ApiKeysPage';
 import { useAuthStore } from './stores/authStore';
 import { authApi, setAccessToken } from './services/api';
 
@@ -116,6 +117,7 @@ export default function App() {
         <Route path="/email" element={<EmailPage />} />
         <Route path="/logs" element={<LogsPage />} />
         <Route path="/messages" element={<MessagesPage />} />
+        <Route path="/api-keys" element={<ApiKeysPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

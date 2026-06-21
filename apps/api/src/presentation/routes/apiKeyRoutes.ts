@@ -7,6 +7,8 @@ const router = Router();
 
 router.use(authenticate);
 router.get('/', apiKeyController.listApiKeys);
-router.post('/', authorize(Role.ADMIN), apiKeyController.createApiKey);
+router.post('/', authorize(Role.ADMIN, Role.OPERATOR), apiKeyController.createApiKey);
+router.delete('/:id', authorize(Role.ADMIN), apiKeyController.deleteApiKey);
+router.patch('/:id/toggle', authorize(Role.ADMIN), apiKeyController.toggleApiKey);
 
 export default router;

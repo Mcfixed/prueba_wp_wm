@@ -6,6 +6,7 @@ import {
   Webhook,
   Mail,
   FileText,
+  Key,
   Settings,
   LogOut,
   ChevronLeft,
@@ -23,6 +24,7 @@ const navItems = [
   { to: '/email', icon: Mail, label: 'Correo SMTP' },
   { to: '/messages', icon: MessageSquare, label: 'Mensajes' },
   { to: '/logs', icon: FileText, label: 'Logs' },
+  { to: '/api-keys', icon: Key, label: 'API Keys' },
 ];
 
 export function Sidebar() {

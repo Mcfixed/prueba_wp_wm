@@ -33,17 +33,28 @@ Importa los archivos JSON en Node-RED (Menu → Import):
 | Archivo | Descripción |
 |---|---|
 | `flow-example.json` | Recibir eventos de WhatsApp (desconexión, QR, etc.) |
-| `send-message-flow.json` | **Enviar mensajes** desde un Inject manual |
-| `sensor-mqtt-flow.json` | Enviar alerta cuando un sensor MQTT se activa |
+| `send-with-apikey-flow.json` | **Enviar mensajes usando API Key** (recomendado) |
+| `login-and-send-flow.json` | Enviar mensajes con login JWT (obsoleto) |
 
-#### send-message-flow.json
+#### send-with-apikey-flow.json (recomendado)
 
-- Enrutamiento por tipo de evento
-- Envío de alertas a Telegram
-- Envío de correos electrónicos
-- Logging de eventos
+Flujo más simple usando **API Key** en lugar de JWT:
 
-### 4. Variables de Entorno Requeridas
+```
+[Inject] → [Configurar petición] → [HTTP POST a API] → [Debug]
+```
+
+### 4. Cómo conseguir la API Key
+
+1. Inicia sesión en el Dashboard (`http://localhost:5173`)
+2. Ve a **API Keys** en el menú lateral
+3. Crea una nueva, asígnale un nombre (ej: "Node-RED")
+4. **Copia la clave** (solo se muestra una vez). Empieza con `wm_...`
+5. En el archivo `send-with-apikey-flow.json`, edita el nodo **"Configurar petición"** y pega la API Key donde dice `API_KEY`
+
+La API Key no expira (a menos que le pongas fecha) y puedes desactivarla/eliminarla desde el Dashboard.
+
+### 5. Variables de Entorno Requeridas
 
 | Variable | Descripción |
 |---|---|

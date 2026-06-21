@@ -1,0 +1,81 @@
+[
+    {
+        "id": "inject-msg",
+        "type": "inject",
+        "z": "whatsapp-flow",
+        "name": "Enviar mensaje",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "payload": "🔴 Alerta desde Node-RED",
+        "payloadType": "str",
+        "x": 150,
+        "y": 100,
+        "wires": [
+            [
+                "build-request"
+            ]
+        ]
+    },
+    {
+        "id": "build-request",
+        "type": "function",
+        "z": "whatsapp-flow",
+        "name": "Configurar petición",
+        "func": "var API_KEY = 'wm_3178044ca8a24fe9a8739fe7080d6d20';\nvar SESSION_ID = '7bf9d8a4-cb9f-44df-bb5e-36272e175524';\nvar PHONE = '56982841275';\n\nmsg.method = 'POST';\nmsg.url = 'http://localhost:3000/api/v1/messages/' + SESSION_ID + '/send';\n\nmsg.headers = {\n    'Authorization': 'Bearer ' + API_KEY,\n    'Content-Type': 'application/json'\n};\n\nmsg.payload = {\n    to: PHONE,\n    text: String(msg.payload)\n};\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 270,
+        "y": 200,
+        "wires": [
+            [
+                "send-request"
+            ]
+        ]
+    },
+    {
+        "id": "send-request",
+        "type": "http request",
+        "z": "whatsapp-flow",
+        "name": "POST a WhatsApp Manager",
+        "method": "use",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "",
+        "persist": false,
+        "senderr": true,
+        "headers": [],
+        "x": 300,
+        "y": 260,
+        "wires": [
+            [
+                "show-result"
+            ]
+        ]
+    },
+    {
+        "id": "show-result",
+        "type": "debug",
+        "z": "whatsapp-flow",
+        "name": "Resultado",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": true,
+        "complete": "true",
+        "targetType": "full",
+        "x": 240,
+        "y": 300,
+        "wires": []
+    }
+]
