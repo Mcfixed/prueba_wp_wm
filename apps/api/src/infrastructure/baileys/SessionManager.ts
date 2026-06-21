@@ -23,6 +23,7 @@ interface ActiveSession {
   qrCode: string | null;
   state: string;
   retries: number;
+  closing?: boolean;
 }
 
 export class SessionManager {
@@ -33,36 +34,46 @@ export class SessionManager {
     this.alertService = new AlertService();
   }
 
+  /** Safe session update - catches "record not found" errors */
+  private async safeUpdate(sessionId: string, data: any): Promise<void> {
+    try {
+      await prisma.session.update({ where: { id: sessionId }, data });
+    } catch (error: any) {
+      if (error?.code === 'P2025') {
+        logger.warn({ sessionId }, 'Session not found in DB, skipping update');
+        return;
+      }
+      throw error;
+    }
+  }
+
   async connectSession(sessionId: string, sessionName: string): Promise<string | null> {
     const sessionDir = path.join(config.baileys.sessionDir, sessionId);
     
-    // Close old socket if exists (gently, keep credentials for reconnect)
+    // Close old socket if exists (mark as closing to avoid reconnect loop)
     if (this.sessions.has(sessionId)) {
       const existing = this.sessions.get(sessionId)!;
+      existing.closing = true;
       try { existing.socket.end(new Error('Reconnecting')); } catch { /* ignore */ }
       this.sessions.delete(sessionId);
       logger.info({ sessionId }, 'Closed existing socket');
     }
     
-    // Check current state to decide: clean start vs resume
+    // Check current state: only clean for LOGGED_OUT
     const currentSession = await prisma.session.findUnique({ where: { id: sessionId } });
-    const needsCleanStart = currentSession && !['CREATED', 'RECONNECTING'].includes(currentSession.state);
+    const isLoggedOut = currentSession?.state === 'LOGGED_OUT';
     
-    if (needsCleanStart) {
-      // DISCONNECTED, LOGGED_OUT, ERROR, WAITING_QR → clean everything, force new QR
-      logger.info({ sessionId, state: currentSession.state }, 'Clean start needed, removing old credentials');
+    if (isLoggedOut) {
+      logger.info({ sessionId }, 'Session was logged out, starting fresh');
       try { await fs.rm(sessionDir, { recursive: true, force: true }); } catch { /* ignore */ }
       await prisma.sessionCredential.deleteMany({ where: { sessionId } });
-      await prisma.session.update({
-        where: { id: sessionId },
-        data: { state: 'CREATED', qrCode: null, phoneNumber: null },
-      });
+      await this.safeUpdate(sessionId, { state: 'CREATED', qrCode: null, phoneNumber: null });
     }
 
     await fs.mkdir(sessionDir, { recursive: true });
 
-    // Restore credentials from DB only for CREATED or RECONNECTING states
-    if (!needsCleanStart) {
+    // Restore credentials from DB for all states except LOGGED_OUT
+    if (!isLoggedOut) {
       await this.restoreCredentials(sessionId, sessionDir);
     }
 
@@ -83,10 +94,7 @@ export class SessionManager {
       });
     } catch (error) {
       logger.error({ sessionId, error }, 'Failed to create Baileys socket');
-      await prisma.session.update({
-        where: { id: sessionId },
-        data: { state: 'ERROR', qrCode: null },
-      });
+      await this.safeUpdate(sessionId, { state: 'ERROR', qrCode: null });
       broadcast('session:state', { sessionId, state: 'ERROR' });
       return null;
     }
@@ -132,10 +140,7 @@ export class SessionManager {
         this.sessions.set(sessionId, { ...this.sessions.get(sessionId)!, qrCode: qrImageUrl });
 
         // Update session state and QR in DB
-        await prisma.session.update({
-          where: { id: sessionId },
-          data: { state: 'WAITING_QR', qrCode: qr },
-        });
+        await this.safeUpdate(sessionId, { state: 'WAITING_QR', qrCode: qr });
 
         emitToSession(sessionId, 'session:qr', { sessionId, qrCode: qrImageUrl });
         broadcast('session:state', { sessionId, state: 'WAITING_QR' });
@@ -159,15 +164,12 @@ export class SessionManager {
           phoneNumber = socket.authState.creds?.me?.id?.split(':')[0] || null;
         } catch { /* ignore */ }
 
-        await prisma.session.update({
-          where: { id: sessionId },
-          data: {
-            state: 'CONNECTED',
-            phoneNumber,
-            qrCode: null,
-            lastConnectionAt: new Date(),
-            lastActivityAt: new Date(),
-          },
+        await this.safeUpdate(sessionId, {
+          state: 'CONNECTED',
+          phoneNumber,
+          qrCode: null,
+          lastConnectionAt: new Date(),
+          lastActivityAt: new Date(),
         });
 
         emitToSession(sessionId, 'session:connected', { sessionId });
@@ -178,6 +180,14 @@ export class SessionManager {
       }
 
       if (connection === 'close') {
+        // Skip if manually closed for reconnection
+        const activeSession = this.sessions.get(sessionId);
+        if (activeSession?.closing) {
+          logger.info({ sessionId }, 'Socket closed manually, skipping reconnect handler');
+          this.sessions.delete(sessionId);
+          return;
+        }
+
         // Extract disconnect reason - handle both Boom and regular Error
         let reason: number | undefined;
         let errorMsg = 'unknown';
@@ -191,8 +201,6 @@ export class SessionManager {
 
         logger.warn({ sessionId, reason, errorMsg }, 'Session connection closed');
 
-        const activeSession = this.sessions.get(sessionId);
-
         // Clean up session files for a fresh start
         const cleanSessionDir = async () => {
           try {
@@ -203,10 +211,7 @@ export class SessionManager {
 
         if (reason === DisconnectReason.loggedOut) {
           logger.warn({ sessionId, errorMsg }, 'Session logged out');
-          await prisma.session.update({
-            where: { id: sessionId },
-            data: { state: 'LOGGED_OUT', qrCode: null, phoneNumber: null },
-          });
+          await this.safeUpdate(sessionId, { state: 'LOGGED_OUT', qrCode: null, phoneNumber: null });
 
           // Remove credentials from DB and clean files
           await prisma.sessionCredential.deleteMany({ where: { sessionId } });
@@ -221,10 +226,7 @@ export class SessionManager {
           if (retries <= config.baileys.maxReconnectRetries) {
             logger.info({ sessionId, retries, maxRetries: config.baileys.maxReconnectRetries }, 'Reconnecting session');
 
-            await prisma.session.update({
-              where: { id: sessionId },
-              data: { state: 'RECONNECTING' },
-            });
+            await this.safeUpdate(sessionId, { state: 'RECONNECTING' });
 
             if (activeSession) {
               this.sessions.set(sessionId, { ...activeSession, retries, state: 'RECONNECTING' });
@@ -237,10 +239,7 @@ export class SessionManager {
             }, config.baileys.reconnectInterval);
           } else {
             logger.error({ sessionId, errorMsg }, 'Reconnect retries exhausted');
-            await prisma.session.update({
-              where: { id: sessionId },
-              data: { state: 'ERROR', qrCode: null },
-            });
+            await this.safeUpdate(sessionId, { state: 'ERROR', qrCode: null });
             this.sessions.delete(sessionId);
             await cleanSessionDir();
             await this.alertService.evaluateAndNotify(sessionId, 'RETRIES_EXHAUSTED', { retries, errorMsg });
@@ -248,10 +247,7 @@ export class SessionManager {
         } else {
           // Other disconnect reasons (including bad auth)
           logger.warn({ sessionId, reason, errorMsg }, 'Session disconnected (other)');
-          await prisma.session.update({
-            where: { id: sessionId },
-            data: { state: 'DISCONNECTED', qrCode: null },
-          });
+          await this.safeUpdate(sessionId, { state: 'DISCONNECTED', qrCode: null });
 
           this.sessions.delete(sessionId);
           await cleanSessionDir();
@@ -284,10 +280,7 @@ export class SessionManager {
         });
 
         // Update last activity
-        await prisma.session.update({
-          where: { id: sessionId },
-          data: { lastActivityAt: new Date() },
-        });
+        await this.safeUpdate(sessionId, { lastActivityAt: new Date() });
       }
     });
 
@@ -302,10 +295,7 @@ export class SessionManager {
       retries: 0,
     });
 
-    await prisma.session.update({
-      where: { id: sessionId },
-      data: { state: 'CONNECTING' },
-    });
+    await this.safeUpdate(sessionId, { state: 'CONNECTING' });
 
     broadcast('session:state', { sessionId, state: 'CONNECTING' });
 
@@ -332,10 +322,7 @@ export class SessionManager {
     } catch { /* ignore */ }
 
     // Reset to CREATED so it can reconnect fresh
-    await prisma.session.update({
-      where: { id: sessionId },
-      data: { state: 'CREATED', qrCode: null },
-    });
+    await this.safeUpdate(sessionId, { state: 'CREATED', qrCode: null });
 
     // Remove stored credentials
     await prisma.sessionCredential.deleteMany({ where: { sessionId } });
