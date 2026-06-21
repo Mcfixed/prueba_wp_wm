@@ -4,6 +4,7 @@ import { connectDatabase, disconnectDatabase } from './infrastructure/database/p
 import { initializeWebSocket } from './infrastructure/websocket';
 import { createApp } from './app';
 import { getSessionManager } from './infrastructure/baileys/SessionManager';
+import { getHealthChecker } from './infrastructure/health/HealthChecker';
 
 async function main() {
   logger.info('Starting WhatsApp Manager API...');
@@ -26,6 +27,10 @@ async function main() {
   httpServer.listen(config.api.port, () => {
     logger.info({ port: config.api.port, env: config.nodeEnv }, `API server listening`);
   });
+
+  // ── Start Health Checker ──
+  getHealthChecker().start(60000);
+  logger.info('Health checker started (every 60s)');
 
   // ── Restore Active Sessions ──
   try {

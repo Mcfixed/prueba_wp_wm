@@ -12,6 +12,7 @@ import metricsRoutes from './metricsRoutes';
 import exportRoutes from './exportRoutes';
 import apiKeyRoutes from './apiKeyRoutes';
 import messageRoutes from './messageRoutes';
+import systemRoutes from './systemRoutes';
 
 const router = Router();
 
@@ -28,5 +29,6 @@ router.use('/', metricsRoutes);
 router.use('/export', exportRoutes);
 router.use('/api-keys', apiKeyRoutes);
 router.use('/messages', messageRoutes);
+router.use('/system', systemRoutes);
 
 export default router;

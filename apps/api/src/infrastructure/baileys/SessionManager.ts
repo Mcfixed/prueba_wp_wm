@@ -99,33 +99,16 @@ export class SessionManager {
       return null;
     }
 
-    // Listen for creds.update for debugging
-    socket.ev.on('creds.update', () => {
-      logger.info({ sessionId }, 'Baileys creds.update received');
-    });
-
-    // Listen for messages.upsert for debugging
-    socket.ev.on('messages.upsert', (data: any) => {
-      logger.info({ sessionId, count: data.messages?.length }, 'Baileys messages.upsert received');
-    });
+    // Note: DO NOT call removeAllListeners here - it would remove Baileys' own
+    // internal handlers and break the connection. Old socket listeners are
+    // cleaned up when the old socket is garbage collected (removed from Map).
 
     let qrCodeValue: string | null = null;
 
     // Handle connection updates
     socket.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update;
-
-      // Log EVERY connection update with full details for debugging
-      logger.info({
-        sessionId,
-        connection,
-        hasQr: !!qr,
-        qrPrefix: qr ? qr.substring(0, 20) : null,
-        lastDisconnect: lastDisconnect ? {
-          error: lastDisconnect.error?.message || String(lastDisconnect.error || 'none'),
-          statusCode: (lastDisconnect.error as any)?.output?.statusCode ?? (lastDisconnect.error as any)?.statusCode ?? 'none',
-        } : null,
-      }, 'Baileys connection.update');
+      logger.debug({ sessionId, connection, hasQr: !!qr }, 'Baileys connection.update');
 
       if (qr) {
         // Convert QR text to image data URL for the frontend
@@ -177,6 +160,10 @@ export class SessionManager {
 
         await this.alertService.evaluateAndNotify(sessionId, 'SESSION_CONNECTED', {});
         logger.info({ sessionId, phoneNumber }, 'Session connected');
+        
+        // Save credentials after successful connection
+        await saveCreds();
+        await this.persistCredentials(sessionId, sessionDir);
       }
 
       if (connection === 'close') {
@@ -259,29 +246,26 @@ export class SessionManager {
 
     // Handle credentials update
     socket.ev.on('creds.update', async () => {
+      logger.debug({ sessionId }, 'creds.update');
       await saveCreds();
       await this.persistCredentials(sessionId, sessionDir);
     });
 
     // Handle messages
-    socket.ev.on('messages.upsert', async ({ messages, type }) => {
-      for (const msg of messages) {
-        await prisma.event.create({
+    socket.ev.on('messages.upsert', async ({ messages }) => {
+      await this.safeUpdate(sessionId, { lastActivityAt: new Date() });
+      await prisma.event.createMany({
+        data: messages.map((msg: any) => ({
+          sessionId,
+          type: 'messages.upsert',
           data: {
-            sessionId,
-            type: 'messages.upsert',
-            data: {
-              messageId: msg.key.id,
-              from: msg.key.remoteJid,
-              type: msg.message?.conversation ? 'conversation' : 'unknown',
-              hasText: !!msg.message?.conversation,
-            },
+            messageId: msg.key?.id,
+            from: msg.key?.remoteJid,
+            hasText: !!msg.message?.conversation,
           },
-        });
-
-        // Update last activity
-        await this.safeUpdate(sessionId, { lastActivityAt: new Date() });
-      }
+        })),
+        skipDuplicates: true,
+      }).catch(() => {});
     });
 
     // Register other event handlers

@@ -10,3 +10,4 @@ export * as metricsController from './metricsController';
 export * as exportController from './exportController';
 export * as apiKeyController from './apiKeyController';
 export * as messageController from './messageController';
+export * as systemController from './systemController';
