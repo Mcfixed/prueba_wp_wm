@@ -36,6 +36,7 @@ export function MessagesPage() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [messageText, setMessageText] = useState('');
   const [sendStatus, setSendStatus] = useState<string | null>(null);
+  const [isGroup, setIsGroup] = useState(false);
 
   // Get connected sessions
   const { data: sessions, isLoading: loadingSessions } = useQuery({
@@ -58,6 +59,7 @@ export function MessagesPage() {
       apiPost(`/messages/${selectedSession}/send`, {
         to: phoneNumber,
         text: messageText,
+        type: isGroup ? 'group' : undefined,
       }),
     onSuccess: () => {
       setSendStatus('✅ Mensaje enviado');
@@ -145,10 +147,13 @@ export function MessagesPage() {
                     {contacts.map((c: any) => (
                       <button
                         key={c.jid}
-                        onClick={() => setPhoneNumber(c.jid.split('@')[0])}
+                        onClick={() => {
+                          setPhoneNumber(c.jid.split('@')[0]);
+                          setIsGroup(c.jid.endsWith('@g.us'));
+                        }}
                         className="btn-ghost text-xs border border-gray-200 dark:border-gray-700"
                       >
-                        <User size={12} />
+                        {c.jid.endsWith('@g.us') ? <MessageSquare size={12} /> : <User size={12} />}
                         {c.name}
                       </button>
                     ))}
@@ -156,20 +161,35 @@ export function MessagesPage() {
                 </div>
               )}
 
-              {/* Phone input */}
+              {/* Destination input */}
               <div>
-                <label className="label">Número de teléfono</label>
+                <label className="label">
+                  {isGroup ? 'ID del grupo' : 'Número de teléfono'}
+                </label>
                 <div className="flex items-center gap-2">
-                  <Phone size={16} className="text-gray-400" />
+                  {isGroup ? <MessageSquare size={16} className="text-gray-400" /> : <Phone size={16} className="text-gray-400" />}
                   <input
                     className="input"
                     value={phoneNumber}
                     onChange={(e) => setPhoneNumber(e.target.value)}
-                    placeholder="521234567890"
+                    placeholder={isGroup ? '120363412672784983' : '521234567890'}
                   />
                 </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isGroup}
+                      onChange={(e) => setIsGroup(e.target.checked)}
+                      className="rounded border-gray-300"
+                    />
+                    <span className="text-gray-600 dark:text-gray-400">Es un grupo</span>
+                  </label>
+                </div>
                 <p className="text-xs text-gray-400 mt-1">
-                  Código de país incluido, sin + ni espacios. Ej: 521234567890
+                  {isGroup
+                    ? 'ID numérico del grupo (sin @g.us). Ej: 120363412672784983'
+                    : 'Código de país incluido, sin + ni espacios. Ej: 521234567890'}
                 </p>
               </div>
 

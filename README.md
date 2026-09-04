@@ -20,7 +20,6 @@ Plataforma SaaS autohospedada para administración de múltiples sesiones de Wha
 - Node.js 22 + Express
 - Baileys (WhatsApp Web)
 - PostgreSQL + Prisma ORM
-- Redis + BullMQ
 - Socket.io
 - JWT + Refresh Tokens
 
@@ -43,7 +42,6 @@ Plataforma SaaS autohospedada para administración de múltiples sesiones de Wha
 - Node.js 22+
 - Docker & Docker Compose
 - PostgreSQL 16
-- Redis 7
 
 ## 🔧 Instalación Rápida
 
@@ -72,8 +70,10 @@ npx prisma db seed --schema=apps/api/prisma/schema.prisma
 # Instalar dependencias
 npm install
 
-# Iniciar servicios (PostgreSQL, Redis) - requiere Docker
-docker compose up -d postgres redis
+# Asegúrate de tener PostgreSQL corriendo en tu máquina
+# y configura las credenciales en .env
+cp .env.example .env
+# Edita .env con los datos de tu PostgreSQL local
 
 # Iniciar backend y frontend
 npm run dev

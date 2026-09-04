@@ -11,14 +11,14 @@ export async function sendMessage(req: Request, res: Response, next: NextFunctio
     });
     if (!session) throw new NotFoundError('Session', req.params.id);
 
-    const { to, text } = req.body;
+    const { to, text, type } = req.body;
     if (!to || !text) {
       res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'to and text are required' } });
       return;
     }
 
     const sessionManager = getSessionManager();
-    const result = await sessionManager.sendMessage(req.params.id, to, text);
+    const result = await sessionManager.sendMessage(req.params.id, to, text, type);
 
     res.json({ success: true, messageId: result?.key?.id });
   } catch (error: any) {

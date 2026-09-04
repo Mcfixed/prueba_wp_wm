@@ -2,28 +2,7 @@
 # WhatsApp Manager - Docker Compose
 # ──────────────────────────────────────────────
 
-version: '3.9'
-
 services:
-  # ── PostgreSQL ──
-  postgres:
-    image: postgres:16-alpine
-    container_name: wm-postgres
-    restart: unless-stopped
-    ports:
-      - '5432:5432'
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-whatsapp_manager}
-      POSTGRES_USER: ${POSTGRES_USER:-wm_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wm_secure_password}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-wm_user} -d ${POSTGRES_DB:-whatsapp_manager}']
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # ── Backend API ──
   api:
     build:
@@ -55,16 +34,12 @@ services:
       CORS_ORIGIN: http://web:80
     volumes:
       - session_data:/app/data/sessions
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
+    healthcheck:
       test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/health']
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-
   # ── Frontend ──
   web:
     build:
@@ -78,8 +53,6 @@ services:
       - api
 
 volumes:
-  postgres_data:
-    driver: local
-  redis_data:
+  session_data:
     driver: local
   

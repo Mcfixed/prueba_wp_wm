@@ -8,8 +8,8 @@ export const config = {
   isDev: (process.env.NODE_ENV || 'development') === 'development',
 
   api: {
-    port: parseInt(process.env.API_PORT || '3000', 10),
-    url: process.env.API_URL || 'http://localhost:3000',
+    port: parseInt(process.env.API_PORT || '3001', 10),
+    url: process.env.API_URL || 'http://localhost:3001',
   },
 
   web: {
@@ -41,8 +41,8 @@ export const config = {
 
   baileys: {
     sessionDir: process.env.BAILEYS_SESSION_DIR || './data/sessions',
-    maxReconnectRetries: parseInt(process.env.BAILEYS_MAX_RECONNECT_RETRIES || '5', 10),
-    reconnectInterval: parseInt(process.env.BAILEYS_RECONNECT_INTERVAL || '5000', 10),
+    maxReconnectRetries: parseInt(process.env.BAILEYS_MAX_RECONNECT_RETRIES || '50', 10),
+    reconnectInterval: parseInt(process.env.BAILEYS_RECONNECT_INTERVAL || '10000', 10),
   },
 
   logging: {

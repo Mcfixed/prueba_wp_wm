@@ -207,11 +207,12 @@ export class SessionManager {
           this.sessions.delete(sessionId);
           broadcast('session:state', { sessionId, state: 'LOGGED_OUT' });
           await this.alertService.evaluateAndNotify(sessionId, 'SESSION_DISCONNECTED', { reason: 'logged_out', errorMsg });
-        } else if (reason === DisconnectReason.connectionLost || reason === DisconnectReason.connectionClosed || reason === 515 || !reason) {
-          // Auto reconnect
+        } else {
+          // All other reasons (connectionLost, connectionClosed, unavailableService 503, etc.)
+          // → auto reconnect. Only loggedOut is excluded.
           const retries = (activeSession?.retries || 0) + 1;
           if (retries <= config.baileys.maxReconnectRetries) {
-            logger.info({ sessionId, retries, maxRetries: config.baileys.maxReconnectRetries }, 'Reconnecting session');
+            logger.info({ sessionId, reason, retries, maxRetries: config.baileys.maxReconnectRetries }, 'Reconnecting session');
 
             await this.safeUpdate(sessionId, { state: 'RECONNECTING' });
 
@@ -225,21 +226,13 @@ export class SessionManager {
               this.connectSession(sessionId, sessionName);
             }, config.baileys.reconnectInterval);
           } else {
-            logger.error({ sessionId, errorMsg }, 'Reconnect retries exhausted');
-            await this.safeUpdate(sessionId, { state: 'ERROR', qrCode: null });
+            logger.error({ sessionId, reason, errorMsg }, 'Reconnect retries exhausted');
+            // Keep session files on disk so manual reconnect works without re-scanning QR
+            await this.safeUpdate(sessionId, { state: 'DISCONNECTED', qrCode: null });
             this.sessions.delete(sessionId);
-            await cleanSessionDir();
+            broadcast('session:state', { sessionId, state: 'DISCONNECTED' });
             await this.alertService.evaluateAndNotify(sessionId, 'RETRIES_EXHAUSTED', { retries, errorMsg });
           }
-        } else {
-          // Other disconnect reasons (including bad auth)
-          logger.warn({ sessionId, reason, errorMsg }, 'Session disconnected (other)');
-          await this.safeUpdate(sessionId, { state: 'DISCONNECTED', qrCode: null });
-
-          this.sessions.delete(sessionId);
-          await cleanSessionDir();
-          broadcast('session:state', { sessionId, state: 'DISCONNECTED' });
-          await this.alertService.evaluateAndNotify(sessionId, 'SESSION_DISCONNECTED', { reason: 'unknown', errorMsg });
         }
       }
     });
@@ -339,13 +332,22 @@ export class SessionManager {
   /**
    * Send a text message through a connected session.
    */
-  async sendMessage(sessionId: string, to: string, text: string): Promise<any> {
+  async sendMessage(sessionId: string, to: string, text: string, type?: string): Promise<any> {
     const active = this.sessions.get(sessionId);
     if (!active || active.state !== 'CONNECTED') {
       throw new Error('Session not connected');
     }
 
-    const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
+    // Build the JID based on destination type
+    let jid: string;
+    if (to.includes('@')) {
+      jid = to;
+    } else if (type === 'group' || /^\d{15,}$/.test(to)) {
+      // Auto-detect groups: purely numeric IDs with 15+ digits are WhatsApp groups
+      jid = `${to}@g.us`;
+    } else {
+      jid = `${to}@s.whatsapp.net`;
+    }
     const result = await active.socket.sendMessage(jid, { text });
     
     logger.info({ sessionId, to: jid, text: text.substring(0, 50) }, 'Message sent');
@@ -411,7 +413,7 @@ export class SessionManager {
   async restoreAllSessions(): Promise<void> {
     try {
       const sessions = await prisma.session.findMany({
-        where: { state: { in: ['CONNECTED', 'CONNECTING', 'RECONNECTING', 'WAITING_QR'] } },
+        where: { state: { in: ['CONNECTED', 'CONNECTING', 'RECONNECTING', 'WAITING_QR', 'DISCONNECTED'] } },
       });
 
       logger.info({ count: sessions.length }, 'Restoring sessions after restart');
