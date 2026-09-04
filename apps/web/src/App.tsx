@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, Suspense, lazy } from 'react';
+import { useState, useEffect, Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/layout/Layout';
 import { LoginPage } from './pages/LoginPage';
@@ -25,63 +25,53 @@ const PageLoader = () => (
 
 function useAuthCheck() {
   const { isAuthenticated, setUser } = useAuthStore();
-  const token = localStorage.getItem('accessToken');
-  const refreshToken = localStorage.getItem('refreshToken');
   const [status, setStatus] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
-
-  const tryRefresh = useCallback(async () => {
-    if (!refreshToken) return false;
-    try {
-      const res = await fetch('/api/v1/auth/refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
-      });
-      if (!res.ok) return false;
-      const data = await res.json();
-      setAccessToken(data.accessToken);
-      localStorage.setItem('refreshToken', data.refreshToken);
-      return true;
-    } catch {
-      return false;
-    }
-  }, [refreshToken]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function check() {
-      if (!token) {
+      const hasAccess = !!localStorage.getItem('accessToken');
+      const hasRefresh = !!localStorage.getItem('refreshToken');
+      if (!hasAccess && !hasRefresh) {
         setStatus('unauthenticated');
         return;
       }
 
+      // 1) Validate the current access token (request() auto-refreshes once on
+      //    401 using the single-flight refresh, so it survives expiry).
       try {
         const user = await authApi.me();
         if (!cancelled) {
           setUser(user);
           setStatus('authenticated');
         }
+        return;
       } catch {
-        // Token expired, try refresh
-        const refreshed = await tryRefresh();
-        if (refreshed) {
-          try {
-            const user = await authApi.me();
-            if (!cancelled) {
-              setUser(user);
-              setStatus('authenticated');
-              return;
-            }
-          } catch {
-            // Refresh worked but /me still fails
+        // 2) Expired/invalid token or a transient failure → try a clean
+        //    silent refresh (single-flight, shared with all requests).
+      }
+
+      const refreshed = await authApi.silentLogin();
+      if (refreshed) {
+        try {
+          const user = await authApi.me();
+          if (!cancelled) {
+            setUser(user);
+            setStatus('authenticated');
           }
+          return;
+        } catch {
+          // Refresh worked but /me still failed.
         }
-        if (!cancelled) {
-          setAccessToken(null);
-          localStorage.removeItem('refreshToken');
-          setStatus('unauthenticated');
-        }
+      }
+
+      // Only a real failure (no valid refresh token) logs the user out, so a
+      // returning user with a stored session stays logged in.
+      if (!cancelled) {
+        setAccessToken(null);
+        localStorage.removeItem('refreshToken');
+        setStatus('unauthenticated');
       }
     }
 
@@ -93,7 +83,7 @@ function useAuthCheck() {
 
     check();
     return () => { cancelled = true; };
-  }, [token, isAuthenticated, setUser, tryRefresh]);
+  }, [isAuthenticated, setUser]);
 
   return status;
 }

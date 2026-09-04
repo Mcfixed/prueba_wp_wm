@@ -46,8 +46,8 @@ async function request<T>(
   useUIStore.getState().setConnection('online');
 
   if (response.status === 401) {
-    // Try refresh token
-    const refreshed = await tryRefresh();
+    // Try refresh token (single-flight: concurrent 401s share one refresh).
+    const refreshed = await refreshTokens();
     if (refreshed) {
       headers['Authorization'] = `Bearer ${accessToken}`;
       const retryResponse = await fetch(`${API_BASE}${endpoint}`, {
@@ -73,7 +73,22 @@ async function request<T>(
   return response.json();
 }
 
-async function tryRefresh(): Promise<boolean> {
+// ── Token refresh (single-flight) ──
+// Only one refresh runs at a time. Concurrent 401s (multiple tabs, React
+// StrictMode double-effects) would otherwise race and rotate/invalidate the
+// refresh token, forcing an unwanted logout.
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function refreshTokens(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = doRefresh().finally(() => {
+      refreshInFlight = null;
+    });
+  }
+  return refreshInFlight;
+}
+
+async function doRefresh(): Promise<boolean> {
   const refreshToken = localStorage.getItem('refreshToken');
   if (!refreshToken) return false;
 
@@ -115,6 +130,8 @@ export const authApi = {
       body: JSON.stringify({ refreshToken }),
     }),
   me: () => request<any>('/auth/me'),
+  // Restore a previous session from the stored refresh token (single-flight).
+  silentLogin: () => refreshTokens(),
 };
 
 // ── Sessions ──
