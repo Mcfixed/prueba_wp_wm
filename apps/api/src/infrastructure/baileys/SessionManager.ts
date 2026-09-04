@@ -110,6 +110,7 @@ export class SessionManager {
       const { connection, lastDisconnect, qr } = update;
       logger.debug({ sessionId, connection, hasQr: !!qr }, 'Baileys connection.update');
 
+      try {
       if (qr) {
         // Convert QR text to image data URL for the frontend
         let qrImageUrl: string | null = null;
@@ -157,6 +158,9 @@ export class SessionManager {
 
         emitToSession(sessionId, 'session:connected', { sessionId });
         broadcast('session:state', { sessionId, state: 'CONNECTED' });
+        // Notify listeners (e.g. the message queue) so pending messages are
+        // drained as soon as the session is back online.
+        dispatchSessionConnected(sessionId);
 
         await this.alertService.evaluateAndNotify(sessionId, 'SESSION_CONNECTED', {});
         logger.info({ sessionId, phoneNumber }, 'Session connected');
@@ -223,7 +227,11 @@ export class SessionManager {
             broadcast('session:state', { sessionId, state: 'RECONNECTING' });
 
             setTimeout(() => {
-              this.connectSession(sessionId, sessionName);
+              // Run the reconnect in background; never let a failed reconnect
+              // become an unhandled rejection that could kill the process.
+              this.connectSession(sessionId, sessionName).catch((error: any) => {
+                logger.error({ sessionId, error }, 'Reconnect attempt failed');
+              });
             }, config.baileys.reconnectInterval);
           } else {
             logger.error({ sessionId, reason, errorMsg }, 'Reconnect retries exhausted');
@@ -235,30 +243,43 @@ export class SessionManager {
           }
         }
       }
+      } catch (error: any) {
+        // Never let an error in this async event handler escape: an escaped
+        // rejection here would crash the whole backend.
+        logger.error({ sessionId, error }, 'Error handling Baileys connection.update');
+      }
     });
 
     // Handle credentials update
     socket.ev.on('creds.update', async () => {
-      logger.debug({ sessionId }, 'creds.update');
-      await saveCreds();
-      await this.persistCredentials(sessionId, sessionDir);
+      try {
+        logger.debug({ sessionId }, 'creds.update');
+        await saveCreds();
+        await this.persistCredentials(sessionId, sessionDir);
+      } catch (error: any) {
+        logger.error({ sessionId, error }, 'Error persisting Baileys creds');
+      }
     });
 
     // Handle messages
     socket.ev.on('messages.upsert', async ({ messages }) => {
-      await this.safeUpdate(sessionId, { lastActivityAt: new Date() });
-      await prisma.event.createMany({
-        data: messages.map((msg: any) => ({
-          sessionId,
-          type: 'messages.upsert',
-          data: {
-            messageId: msg.key?.id,
-            from: msg.key?.remoteJid,
-            hasText: !!msg.message?.conversation,
-          },
-        })),
-        skipDuplicates: true,
-      }).catch(() => {});
+      try {
+        await this.safeUpdate(sessionId, { lastActivityAt: new Date() });
+        await prisma.event.createMany({
+          data: messages.map((msg: any) => ({
+            sessionId,
+            type: 'messages.upsert',
+            data: {
+              messageId: msg.key?.id,
+              from: msg.key?.remoteJid,
+              hasText: !!msg.message?.conversation,
+            },
+          })),
+          skipDuplicates: true,
+        }).catch(() => {});
+      } catch (error: any) {
+        logger.error({ sessionId, error }, 'Error handling Baileys messages.upsert');
+      }
     });
 
     // Register other event handlers
@@ -436,6 +457,8 @@ export class SessionManager {
     const handlers: Partial<Record<keyof BaileysEventMap, (data: any) => void>> = {
       'messages.update': async (data) => {
         await this.logEvent(sessionId, 'messages.update', data);
+        // Notify listeners (e.g. the message queue) for delivery confirmation.
+        dispatchMessageReceipts(sessionId, data);
       },
       'messages.delete': async (data) => {
         await this.logEvent(sessionId, 'messages.delete', data);
@@ -513,4 +536,44 @@ export function getSessionManager(): SessionManager {
     sessionManager = new SessionManager();
   }
   return sessionManager;
+}
+
+// ──────────────────────────────────────────────
+// Session listeners (one-way: SessionManager never imports the consumers,
+// so there are no circular dependencies).
+// ──────────────────────────────────────────────
+type ConnectedListener = (sessionId: string) => void;
+type ReceiptsListener = (sessionId: string, receipts: any[]) => void;
+
+const connectedListeners: ConnectedListener[] = [];
+const receiptsListeners: ReceiptsListener[] = [];
+
+/** Register a callback invoked every time a session becomes CONNECTED. */
+export function onSessionConnected(listener: ConnectedListener): void {
+  connectedListeners.push(listener);
+}
+
+/** Register a callback invoked with Baileys `messages.update` receipts. */
+export function onMessageReceipts(listener: ReceiptsListener): void {
+  receiptsListeners.push(listener);
+}
+
+function dispatchSessionConnected(sessionId: string): void {
+  for (const listener of connectedListeners) {
+    try {
+      listener(sessionId);
+    } catch (error) {
+      logger.error({ sessionId, error }, 'Session connected listener error');
+    }
+  }
+}
+
+function dispatchMessageReceipts(sessionId: string, receipts: any[]): void {
+  for (const listener of receiptsListeners) {
+    try {
+      listener(sessionId, receipts);
+    } catch (error) {
+      logger.error({ sessionId, error }, 'Message receipts listener error');
+    }
+  }
 }

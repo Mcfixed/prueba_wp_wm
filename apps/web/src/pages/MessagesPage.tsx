@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Send, MessageSquare, RefreshCw, Phone, User } from 'lucide-react';
 import { sessionApi } from '../services/api';
@@ -38,6 +38,10 @@ export function MessagesPage() {
   const [sendStatus, setSendStatus] = useState<string | null>(null);
   const [isGroup, setIsGroup] = useState(false);
 
+  // Cancellation token for the outbox status poll (stops on unmount / new send).
+  const pollRef = useRef(0);
+  useEffect(() => () => { pollRef.current += 1; }, []);
+
   // Get connected sessions
   const { data: sessions, isLoading: loadingSessions } = useQuery({
     queryKey: ['connected-sessions'],
@@ -56,15 +60,53 @@ export function MessagesPage() {
   // Send message mutation
   const sendMutation = useMutation({
     mutationFn: () =>
-      apiPost(`/messages/${selectedSession}/send`, {
-        to: phoneNumber,
-        text: messageText,
-        type: isGroup ? 'group' : undefined,
-      }),
-    onSuccess: () => {
-      setSendStatus('✅ Mensaje enviado');
+      apiPost<{ success: boolean; messageId: string; status: string; queued?: boolean }>(
+        `/messages/${selectedSession}/send`,
+        {
+          to: phoneNumber,
+          text: messageText,
+          type: isGroup ? 'group' : undefined,
+        }
+      ),
+    onSuccess: (data) => {
       setMessageText('');
-      setTimeout(() => setSendStatus(null), 3000);
+      if (!data?.messageId) {
+        setSendStatus('✅ Mensaje enviado');
+        window.setTimeout(() => setSendStatus(null), 3000);
+        return;
+      }
+
+      // The message is queued (outbox). Poll its real status until it settles
+      // (SENT / FAILED) so the UI reflects what actually happened.
+      setSendStatus('⏳ En cola, enviando…');
+      const token = ++pollRef.current;
+      let attempts = 0;
+      const poll = async () => {
+        if (token !== pollRef.current) return;
+        if (attempts++ >= 20) {
+          // ~40s sin confirmación: no bloquear, avisar y seguir.
+          setSendStatus('⏳ En cola (aún sin confirmar). Puedes verificar en Logs.');
+          window.setTimeout(() => setSendStatus(null), 6000);
+          return;
+        }
+        try {
+          const st = await apiGet<any>(`/messages/outbox/${data.messageId}`);
+          if (st.status === 'SENT' || st.status === 'FAILED') {
+            setSendStatus(
+              st.status === 'SENT'
+                ? st.deliveredAt ? '✅ Entregado' : '✅ Enviado'
+                : `❌ Falló: ${st.lastError || 'intentos agotados'}`
+            );
+            window.setTimeout(() => setSendStatus(null), 4000);
+            return;
+          }
+          setSendStatus('⏳ En cola, enviando…');
+        } catch {
+          // Transient error polling; keep trying.
+        }
+        window.setTimeout(poll, 2000);
+      };
+      window.setTimeout(poll, 2000);
     },
     onError: (err: any) => {
       setSendStatus(`❌ Error: ${err.message}`);

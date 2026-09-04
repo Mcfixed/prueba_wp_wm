@@ -1,5 +1,7 @@
 const API_BASE = '/api/v1';
 
+import { useUIStore } from '../stores/uiStore';
+
 let accessToken: string | null = localStorage.getItem('accessToken');
 
 export function setAccessToken(token: string | null) {
@@ -28,10 +30,20 @@ async function request<T>(
     headers['Authorization'] = `Bearer ${accessToken}`;
   }
 
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${endpoint}`, {
+      ...options,
+      headers,
+    });
+  } catch {
+    // The backend did not answer at all (network error / process down).
+    useUIStore.getState().setConnection('offline', 'Backend no disponible. Reintentando…');
+    throw new ApiError('No se pudo conectar con el servidor', 0);
+  }
+
+  // The backend answered (even with an error status) → it is reachable.
+  useUIStore.getState().setConnection('online');
 
   if (response.status === 401) {
     // Try refresh token
@@ -126,6 +138,52 @@ export const sessionApi = {
   logs: (id: string, page = 1, limit = 50) =>
     request<any>(`/sessions/${id}/logs?page=${page}&limit=${limit}`),
   qr: (id: string) => request<{ qrCode: string | null }>(`/sessions/${id}/qr`),
+};
+
+// ── Mensajes (outbox / historial) ──
+export interface OutboxMessage {
+  id: string;
+  sessionId: string;
+  session?: { id: string; name: string } | null;
+  to: string;
+  text: string;
+  type: string | null;
+  status: 'PENDING' | 'PROCESSING' | 'SENT' | 'FAILED';
+  attempts: number;
+  maxAttempts: number;
+  lastError: string | null;
+  waMessageId: string | null;
+  createdAt: string;
+  sentAt: string | null;
+  deliveredAt: string | null;
+}
+
+export interface MessageListResponse {
+  data: OutboxMessage[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface MessageStats {
+  total: number;
+  pending: number;
+  processing: number;
+  sent: number;
+  failed: number;
+  delivered: number;
+}
+
+export const messageApi = {
+  list: (params?: Record<string, string | number>) => {
+    const query = params
+      ? '?' + new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString()
+      : '';
+    return request<MessageListResponse>(`/messages${query}`);
+  },
+  stats: () => request<MessageStats>('/messages/stats'),
+  status: (id: string) => request<OutboxMessage>(`/messages/outbox/${id}`),
 };
 
 // ── Alerts ──

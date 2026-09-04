@@ -128,6 +128,28 @@ npm run dev
 |---|---|---|
 | POST | `/api/v1/webhooks/session-events` | Eventos para Node-RED |
 
+### Mensajes (entrega garantizada con outbox)
+El envío **ya no bloquea**: al llamar a `/send` el mensaje se guarda en una cola
+(outbox) y se responde `202` de inmediato. Un worker por sesión lo envía con
+espaciado (anti-ráfaga) y **reintentos con backoff**; si la sesión está caída,
+espera a que reconecte y lo envía entonces. Esto hace que los mensajes **no se
+pierdan** aunque haya llamadas simultáneas de varios servicios o errores durante
+el envío.
+
+| Método | Endpoint | Descripción |
+|---|---|---|
+| GET | `/api/v1/messages` | Historial (outbox) paginado y filtrable: `page`, `limit`, `status` (coma = varios), `sessionId`, `q`, `from`/`to`. |
+| GET | `/api/v1/messages/stats` | Contadores: `total`, `pending`, `processing`, `sent`, `delivered`, `failed`. |
+| POST | `/api/v1/messages/:sessionId/send` | Encola un mensaje. Body: `{ to, text, type?, idempotencyKey? }`. Respuesta `202`: `{ success, messageId, status, queued }`. |
+| GET | `/api/v1/messages/outbox/:messageId` | Estado real: `PENDING`/`PROCESSING`/`SENT`/`FAILED`, `attempts`, `lastError`, `waMessageId`, `deliveredAt`. |
+
+> **Nota para integradores**: el `messageId` que devuelve `/send` es el **id del
+> outbox** (no el id de WhatsApp). Consulta `GET /outbox/:id` para conocer el
+> estado final y el `waMessageId`. Usa un `idempotencyKey` (única) para que los
+> reintentos del lado del llamante no generen duplicados. `SENT` = escrito al
+> socket de WhatsApp; `deliveredAt` se rellena cuando WhatsApp confirma la
+> entrega (recibo). Un mensaje pasa a `FAILED` solo tras agotar los reintentos.
+
 ## 📊 Estados de Sesión
 
 ```

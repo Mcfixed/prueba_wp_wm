@@ -5,8 +5,13 @@ import { initializeWebSocket } from './infrastructure/websocket';
 import { createApp } from './app';
 import { getSessionManager } from './infrastructure/baileys/SessionManager';
 import { getHealthChecker } from './infrastructure/health/HealthChecker';
+import { installProcessGuards } from './infrastructure/processGuard';
+import { MessageQueue } from './infrastructure/messages/MessageQueue';
 
 async function main() {
+  // Install BEFORE anything else so no async error can crash the backend.
+  installProcessGuards();
+
   logger.info('Starting WhatsApp Manager API...');
 
   // ── Connect to Database ──
@@ -31,6 +36,11 @@ async function main() {
   // ── Start Health Checker ──
   getHealthChecker().start(60000);
   logger.info('Health checker started (every 60s)');
+
+  // ── Start Message Queue (outbox): guaranteed delivery with retries ──
+  // Registered before sessions are restored so pending messages are drained
+  // as soon as each session (re)connects.
+  MessageQueue.getInstance().start();
 
   // ── Restore Active Sessions ──
   try {

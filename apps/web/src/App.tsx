@@ -4,6 +4,7 @@ import { Layout } from './components/layout/Layout';
 import { LoginPage } from './pages/LoginPage';
 import { useAuthStore } from './stores/authStore';
 import { authApi, setAccessToken } from './services/api';
+import { ConnectionBanner } from './components/ui/ConnectionBanner';
 
 // Lazy loaded pages (named exports need .then())
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
@@ -13,6 +14,7 @@ const WebhooksPage = lazy(() => import('./pages/WebhooksPage').then(m => ({ defa
 const EmailPage = lazy(() => import('./pages/EmailPage').then(m => ({ default: m.EmailPage })));
 const LogsPage = lazy(() => import('./pages/LogsPage').then(m => ({ default: m.LogsPage })));
 const MessagesPage = lazy(() => import('./pages/MessagesPage').then(m => ({ default: m.MessagesPage })));
+const MessagesHistoryPage = lazy(() => import('./pages/MessagesHistoryPage').then(m => ({ default: m.MessagesHistoryPage })));
 const ApiKeysPage = lazy(() => import('./pages/ApiKeysPage').then(m => ({ default: m.ApiKeysPage })));
 
 const PageLoader = () => (
@@ -109,11 +111,15 @@ export default function App() {
   }
 
   return (
-    <Suspense fallback={<PageLoader />}>
-      <Routes>
-        <Route path="/login" element={
-          authStatus === 'authenticated' ? <Navigate to="/" replace /> : <LoginPage />
-        } />
+    <>
+      {/* Global connection banner: warns when the backend is down/degraded,
+          including on the login screen. */}
+      <ConnectionBanner />
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route path="/login" element={
+            authStatus === 'authenticated' ? <Navigate to="/" replace /> : <LoginPage />
+          } />
         <Route
           element={
             authStatus === 'authenticated' ? <Layout /> : <Navigate to="/login" replace />
@@ -125,11 +131,13 @@ export default function App() {
           <Route path="/webhooks" element={<WebhooksPage />} />
           <Route path="/email" element={<EmailPage />} />
           <Route path="/logs" element={<LogsPage />} />
+          <Route path="/messages/history" element={<MessagesHistoryPage />} />
           <Route path="/messages" element={<MessagesPage />} />
           <Route path="/api-keys" element={<ApiKeysPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Suspense>
+        </Routes>
+      </Suspense>
+    </>
   );
 }

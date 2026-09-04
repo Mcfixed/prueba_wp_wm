@@ -1,5 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import { getAccessToken } from './api';
+import { useUIStore } from '../stores/uiStore';
 
 let socket: Socket | null = null;
 
@@ -15,14 +16,30 @@ export function connectSocket(): Socket {
 
   socket.on('connect', () => {
     console.log('WebSocket connected');
+    useUIStore.getState().setConnection('online');
   });
 
   socket.on('disconnect', (reason) => {
     console.log('WebSocket disconnected:', reason);
+    // Ignore manual disconnects (logout). socket.io auto-reconnects the rest.
+    if (reason === 'io client disconnect') return;
+    useUIStore.getState().setConnection('offline', 'Conexión en tiempo real perdida. Reconectando…');
   });
 
   socket.on('connect_error', (error) => {
     console.error('WebSocket connection error:', error.message);
+    useUIStore.getState().setConnection('offline', 'Backend no disponible. Reconectando…');
+  });
+
+  // Backend notifies about transient errors it caught (kept alive, but degraded).
+  socket.on('app:status', (data: any) => {
+    if (data?.status === 'degraded') {
+      console.warn('Backend degraded:', data);
+      useUIStore.getState().setConnection(
+        'degraded',
+        data.message ? `Inestabilidad detectada: ${data.message}` : 'Inestabilidad detectada en el backend'
+      );
+    }
   });
 
   return socket;

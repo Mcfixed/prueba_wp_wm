@@ -8,6 +8,7 @@ import {
   FileText,
   Key,
   Settings,
+  History,
   LogOut,
   ChevronLeft,
   ChevronRight,
@@ -23,6 +24,7 @@ const navItems = [
   { to: '/webhooks', icon: Webhook, label: 'Webhooks' },
   { to: '/email', icon: Mail, label: 'Correo SMTP' },
   { to: '/messages', icon: MessageSquare, label: 'Mensajes' },
+  { to: '/messages/history', icon: History, label: 'Historial' },
   { to: '/logs', icon: FileText, label: 'Logs' },
   { to: '/api-keys', icon: Key, label: 'API Keys' },
 ];
@@ -60,7 +62,7 @@ export function Sidebar() {
           <NavLink
             key={item.to}
             to={item.to}
-            end={item.to === '/'}
+            end={item.to === '/' || item.to === '/messages'}
             className={({ isActive }) =>
               clsx(
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors',
